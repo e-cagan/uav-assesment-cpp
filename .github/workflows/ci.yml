@@ -31,6 +31,8 @@ jobs:
           buildkitd-flags: --debug
 
       - name: 🐳 Build image (load for tests)
+        id: build_image
+        continue-on-error: true
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -46,7 +48,7 @@ jobs:
           chmod +x run_sitl.sh run_mavros.sh
           chmod +x src/uav_tests_cpp/tests/run_e2e.sh
 
-      # -------- MAVROS SMOKE --------
+      # ---------- MAVROS smoke ----------
       - name: 🧪 MAVROS smoke
         id: mavros_smoke
         shell: bash
@@ -57,26 +59,24 @@ jobs:
             set -eo pipefail
             mkdir -p /ws/.ci_artifacts
             source /opt/ros/humble/setup.bash
-
             ./run_sitl.sh &
             sleep 5
             nohup ./run_mavros.sh 14557 > /tmp/mavros.log 2>&1 &
-
             ok=0
             for i in $(seq 1 40); do
               source /opt/ros/humble/setup.bash
               if ros2 topic list 2>/dev/null | grep -q "/mavros/state"; then ok=1; break; fi
               sleep 0.5
             done
-
             cp /tmp/sitl.log  .ci_artifacts/smoke_sitl.log  2>/dev/null || true
             cp /tmp/mavros.log .ci_artifacts/smoke_mavros.log 2>/dev/null || true
-
             exit $([ "$ok" -eq 1 ] && echo 0 || echo 1)
           '
-          echo "rc=$?" >> "$GITHUB_OUTPUT"
+          rc=$?
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+          exit $rc
 
-      # -------- BUILD --------
+      # ---------- Build (colcon) ----------
       - name: 🧱 Build (colcon)
         id: build_cpp
         shell: bash
@@ -88,9 +88,11 @@ jobs:
             source /opt/ros/humble/setup.bash
             colcon build --symlink-install --packages-up-to uav_tests_cpp
           '
-          echo "rc=$?" >> "$GITHUB_OUTPUT"
+          rc=$?
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+          exit $rc
 
-      # -------- TASK 1 --------
+      # ---------- Task 1 ----------
       - name: ▶️ Task 1 – Arm/Disarm
         id: task1
         shell: bash
@@ -101,20 +103,22 @@ jobs:
             set -eo pipefail
             source /opt/ros/humble/setup.bash
             source install/setup.bash
-
             rc=0
-            # NOT: "|| true" YOK — kodu yakalıyoruz
-            colcon test --packages-select uav_tests_cpp --ctest-args -R "^task1_arm_disarm$" -VV || rc=$?
+            # Kritik: test fail ederse non-zero dönsün
+            colcon test --packages-select uav_tests_cpp \
+              --return-code-on-test-failure \
+              --ctest-args -R "^task1_arm_disarm$" -VV || rc=$?
             colcon test-result --all --verbose || true
-
             mkdir -p .ci_artifacts
             cp /tmp/sitl_e2e.log   .ci_artifacts/task1_sitl.log   2>/dev/null || true
             cp /tmp/mavros_e2e.log .ci_artifacts/task1_mavros.log 2>/dev/null || true
             exit $rc
           '
-          echo "rc=$?" >> "$GITHUB_OUTPUT"
+          rc=$?
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+          exit $rc
 
-      # -------- TASK 2 --------
+      # ---------- Task 2 ----------
       - name: ▶️ Task 2 – Takeoff/Land
         id: task2
         shell: bash
@@ -125,17 +129,19 @@ jobs:
             set -eo pipefail
             source /opt/ros/humble/setup.bash
             source install/setup.bash
-
             rc=0
-            colcon test --packages-select uav_tests_cpp --ctest-args -R "^task2_takeoff_land$" -VV || rc=$?
+            colcon test --packages-select uav_tests_cpp \
+              --return-code-on-test-failure \
+              --ctest-args -R "^task2_takeoff_land$" -VV || rc=$?
             colcon test-result --all --verbose || true
-
             mkdir -p .ci_artifacts
             cp /tmp/sitl_e2e.log   .ci_artifacts/task2_sitl.log   2>/dev/null || true
             cp /tmp/mavros_e2e.log .ci_artifacts/task2_mavros.log 2>/dev/null || true
             exit $rc
           '
-          echo "rc=$?" >> "$GITHUB_OUTPUT"
+          rc=$?
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+          exit $rc
 
       - name: 📎 Upload artifacts
         if: always()
@@ -144,9 +150,9 @@ jobs:
           name: ci-artifacts
           path: .ci_artifacts
 
-      # -------- GHCR PUSH (only main, not PR, owner) --------
+      # ---------- GHCR push (dene, ama job'ı düşürme) ----------
       - name: 🔐 Login to GHCR
-        if: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && github.repository_owner == github.actor }}
+        if: ${{ github.event_name != 'pull_request' && github.repository_owner == github.actor }}
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -154,7 +160,9 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 📦 Publish image to GHCR
-        if: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && github.repository_owner == github.actor }}
+        id: publish
+        if: ${{ github.event_name != 'pull_request' && github.repository_owner == github.actor }}
+        continue-on-error: true
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -167,18 +175,14 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # -------- SUMMARY (colored badges) --------
+      # ---------- Summary (renkli rozetlerle) ----------
       - name: 📝 Summary
         if: always()
         shell: bash
-        env:
-          RC_SMOKE: ${{ steps.mavros_smoke.outputs.rc }}
-          RC_TASK1: ${{ steps.task1.outputs.rc }}
-          RC_TASK2: ${{ steps.task2.outputs.rc }}
         run: |
           badge () {
             # $1: label  $2: rc (0/!=0)
-            if [ "${2:-1}" -eq 0 ]; then
+            if [ "$2" -eq 0 ]; then
               echo "![${1}](https://img.shields.io/badge/${1// /%20}-SUCCESS-brightgreen)"
             else
               echo "![${1}](https://img.shields.io/badge/${1// /%20}-FAILURE-red)"
@@ -187,9 +191,9 @@ jobs:
           {
             echo "## 🛩️ UAV Assessment (C++)"
             echo
-            echo "$(badge "MAVROS smoke"  "${RC_SMOKE}")"
-            echo "$(badge "Task 1"        "${RC_TASK1}")"
-            echo "$(badge "Task 2"        "${RC_TASK2}")"
+            echo "$(badge "MAVROS smoke"  ${{ steps.mavros_smoke.outputs.rc || 1 }})"
+            echo "$(badge "Task 1"        ${{ steps.task1.outputs.rc || 1 }})"
+            echo "$(badge "Task 2"        ${{ steps.task2.outputs.rc || 1 }})"
             echo
             echo "<details><summary>🧾 MAVROS smoke – log tail</summary>"
             echo
@@ -215,6 +219,8 @@ jobs:
             echo "</details>"
             echo
             echo "### 🐋 Docker (GHCR)"
+            echo "Push denemesi: **${{ steps.publish.outcome || 'skipped' }}**"
+            echo
             echo '```bash'
             echo "docker pull ${{ env.GHCR_IMAGE }}:latest"
             echo "docker pull ${{ env.GHCR_IMAGE }}:${{ github.sha }}"
