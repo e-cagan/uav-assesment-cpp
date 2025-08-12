@@ -9,20 +9,16 @@ TEST_F(MavrosFixture, TakeoffLand) {
 
   ASSERT_TRUE(cli.wait_for_mavros(20.0)) << "MAVROS services not ready";
 
-  // OFFBOARD öncesi setpoint besle (PX4 şartı)
   cli.pump_setpoints(0.0, 120, std::chrono::milliseconds(20));
 
   ASSERT_TRUE(cli.set_mode("OFFBOARD", 5.0)) << "Failed to set OFFBOARD";
   ASSERT_TRUE(cli.arm(true, 5.0))            << "Arm failed";
 
-  // 3m'e kalk
   cli.pump_setpoints(3.0, 250, std::chrono::milliseconds(20));
   EXPECT_TRUE(cli.wait_alt_ge(1.8, 12.0))    << "Altitude did not rise enough";
 
-  // Hover bir miktar
   cli.pump_setpoints(3.0, 120, std::chrono::milliseconds(20));
 
-  // Land — mod değişmezse setpoint ile indir
   bool landed_mode = cli.set_mode("AUTO.LAND", 5.0);
   if (!landed_mode) {
     cli.pump_setpoints(0.0, 300, std::chrono::milliseconds(20));

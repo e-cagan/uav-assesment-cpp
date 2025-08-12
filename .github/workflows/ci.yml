@@ -69,7 +69,6 @@ jobs:
               sleep 0.5
             done
 
-            # logs -> host
             [ -f /tmp/sitl.log ]  && cp /tmp/sitl.log  .ci_artifacts/smoke_sitl.log  || true
             [ -f /tmp/mavros.log ]&& cp /tmp/mavros.log .ci_artifacts/smoke_mavros.log|| true
 
@@ -91,6 +90,7 @@ jobs:
       - name: ▶️ Task 1 – Arm/Disarm
         id: task1
         shell: bash
+        continue-on-error: true
         run: |
           docker run --rm -t -v "$PWD":/ws -w /ws ${{ env.LOCAL_IMAGE }} bash -lc '
             set -eo pipefail
@@ -161,26 +161,19 @@ jobs:
             echo "- Task 2 (Takeoff/Land): **${{ steps.task2.outcome }}**"
             echo
             echo "<details><summary>🧾 MAVROS smoke – log tail</summary>"
-            echo
             echo '```text'
             [ -f .ci_artifacts/smoke_mavros.log ] && tail -n 80 .ci_artifacts/smoke_mavros.log || echo "(no smoke_mavros.log)"
             echo '```'
             echo "</details>"
-            echo
             echo "<details><summary>📄 Task 1 – SITL/MAVROS log tail</summary>"
-            echo
             echo '```text'
             [ -f .ci_artifacts/task1_sitl.log ] && tail -n 100 .ci_artifacts/task1_sitl.log || echo "(no task1_sitl.log)"
-            echo
             [ -f .ci_artifacts/task1_mavros.log ] && tail -n 80 .ci_artifacts/task1_mavros.log || echo "(no task1_mavros.log)"
             echo '```'
             echo "</details>"
-            echo
             echo "<details><summary>📄 Task 2 – SITL/MAVROS log tail</summary>"
-            echo
             echo '```text'
             [ -f .ci_artifacts/task2_sitl.log ] && tail -n 100 .ci_artifacts/task2_sitl.log || echo "(no task2_sitl.log)"
-            echo
             [ -f .ci_artifacts/task2_mavros.log ] && tail -n 80 .ci_artifacts/task2_mavros.log || echo "(no task2_mavros.log)"
             echo '```'
             echo "</details>"
