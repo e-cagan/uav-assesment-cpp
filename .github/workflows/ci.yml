@@ -103,13 +103,15 @@ jobs:
             source /opt/ros/humble/setup.bash
             source install/setup.bash
 
-            rc=0
-            colcon test --packages-select uav_tests_cpp --ctest-args -R "^task1_arm_disarm$" -VV || rc=$?
-            colcon test-result --all --verbose || true
+            # Testleri koştur ama rc'yi test-result'tan al
+            colcon test --packages-select uav_tests_cpp --ctest-args -R "^task1_arm_disarm$" -VV || true
+            colcon test-result --all --verbose
+            rc=$?
 
             mkdir -p .ci_artifacts
             cp /tmp/sitl_e2e.log   .ci_artifacts/task1_sitl.log   2>/dev/null || true
             cp /tmp/mavros_e2e.log .ci_artifacts/task1_mavros.log 2>/dev/null || true
+
             exit $rc
           '
           echo "rc=$?" >> "$GITHUB_OUTPUT"
@@ -126,13 +128,14 @@ jobs:
             source /opt/ros/humble/setup.bash
             source install/setup.bash
 
-            rc=0
-            colcon test --packages-select uav_tests_cpp --ctest-args -R "^task2_takeoff_land$" -VV || rc=$?
-            colcon test-result --all --verbose || true
+            colcon test --packages-select uav_tests_cpp --ctest-args -R "^task2_takeoff_land$" -VV || true
+            colcon test-result --all --verbose
+            rc=$?
 
             mkdir -p .ci_artifacts
             cp /tmp/sitl_e2e.log   .ci_artifacts/task2_sitl.log   2>/dev/null || true
             cp /tmp/mavros_e2e.log .ci_artifacts/task2_mavros.log 2>/dev/null || true
+
             exit $rc
           '
           echo "rc=$?" >> "$GITHUB_OUTPUT"
