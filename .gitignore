@@ -1,0 +1,68 @@
+# ==============================
+# ROS 2 / colcon build output
+# ==============================
+build/
+install/
+log/
+
+# Colcon test results
+Testing/
+test_results/
+
+# ==============================
+# PX4 / SITL logs
+# ==============================
+*.ulg
+*.log
+*.tlog
+*.rlog
+*.px4log
+*.mavlink
+*.bin
+*.csv
+
+# Temp SITL / MAVROS logs
+/tmp/sitl*.log
+/tmp/mavros*.log
+
+# ==============================
+# CMake / Ninja build files
+# ==============================
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+compile_commands.json
+
+# Ninja
+.ninja_deps
+.ninja_log
+
+# ==============================
+# VS Code / CLion
+# ==============================
+.vscode/
+.idea/
+
+# ==============================
+# Python (if any scripts/tools)
+# ==============================
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pytest_cache/
+*.mypy_cache/
+
+# ==============================
+# Docker
+# ==============================
+.dockerignore
+*.tar
+
+# ==============================
+# OS / Misc
+# ==============================
+.DS_Store
+Thumbs.db
+~$*

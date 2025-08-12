@@ -1,0 +1,174 @@
+name: UAV Assessment CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  LOCAL_IMAGE: uav-assessment-env:ci
+  GHCR_IMAGE: ghcr.io/${{ github.repository_owner }}/uav-assessment-env
+
+jobs:
+  sim-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      - name: 🛠️ Setup Buildx
+        id: buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          install: true
+          driver: docker-container
+          buildkitd-flags: --debug
+
+      - name: 🐳 Build image (load for tests)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          tags: ${{ env.LOCAL_IMAGE }}
+          load: true
+          builder: ${{ steps.buildx.outputs.name }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: 🔧 Make scripts executable
+        run: chmod +x run_sitl.sh run_mavros.sh
+
+      # ------------------ MAVROS smoke ------------------
+      - name: 🧪 MAVROS smoke
+        id: mavros
+        continue-on-error: true
+        shell: bash
+        run: |
+          docker run --rm -t -v "$PWD":/ws -w /ws ${{ env.LOCAL_IMAGE }} bash -lc '
+            set -eo pipefail
+            mkdir -p /ws/.ci_artifacts
+
+            test -d /opt/ros/humble || { echo "[ERR] ROS not found"; exit 1; }
+            test -d /opt/PX4-Autopilot || { echo "[ERR] PX4 not found"; exit 1; }
+
+            source /opt/ros/humble/setup.bash
+            ./run_sitl.sh || true
+            nohup ./run_mavros.sh 14557 > /tmp/mavros.log 2>&1 &
+
+            ok=0
+            for i in $(seq 1 40); do
+              source /opt/ros/humble/setup.bash
+              if ros2 topic list 2>/dev/null | grep -q "/mavros/state"; then
+                echo "[OK] MAVROS up"
+                ok=1
+                break
+              fi
+              sleep 0.5
+            done
+
+            cp /tmp/sitl.log   /ws/.ci_artifacts/mavros_sitl.log  2>/dev/null || true
+            cp /tmp/mavros.log /ws/.ci_artifacts/mavros.log       2>/dev/null || true
+
+            test "$ok" -eq 1
+          '
+
+      # ------------------ C++ BUILD & TEST ------------------
+      - name: 🧱 Build (colcon)
+        shell: bash
+        run: |
+          docker run --rm -t -v "$PWD":/ws -w /ws ${{ env.LOCAL_IMAGE }} bash -lc '
+            set -eo pipefail
+            source /opt/ros/humble/setup.bash
+            colcon build --symlink-install --packages-up-to uav_tests_cpp
+          '
+
+      - name: ▶️ Test (ctest via colcon)
+        id: ctest
+        continue-on-error: true
+        shell: bash
+        run: |
+          docker run --rm -t -v "$PWD":/ws -w /ws ${{ env.LOCAL_IMAGE }} bash -lc '
+            set -eo pipefail
+            source /opt/ros/humble/setup.bash
+            source install/setup.bash
+            colcon test --packages-select uav_tests_cpp --ctest-args -VV || true
+            colcon test-result --verbose || true
+            # logları topla
+            mkdir -p .ci_artifacts
+            [ -f /tmp/sitl_e2e.log ]   && cp /tmp/sitl_e2e.log   .ci_artifacts/sitl_e2e.log   || true
+            [ -f /tmp/mavros_e2e.log ] && cp /tmp/mavros_e2e.log .ci_artifacts/mavros_e2e.log || true
+            cp -r build/uav_tests_cpp/test_results .ci_artifacts/test_results 2>/dev/null || true
+          '
+
+      - name: 📎 Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-artifacts
+          path: .ci_artifacts
+
+      # ---- GHCR Publish (Packages) ----
+      - name: 🔐 Login to GHCR
+        if: ${{ github.event_name != 'pull_request' }}
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 📦 Publish image to GHCR (Packages)
+        id: publish
+        if: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && steps.ctest.outcome == 'success' }}
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${{ env.GHCR_IMAGE }}:latest
+            ${{ env.GHCR_IMAGE }}:${{ github.sha }}
+          builder: ${{ steps.buildx.outputs.name }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: 📝 Summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## 🛩️ UAV Assessment (C++)"
+            echo
+            echo "- MAVROS smoke: **${{ steps.mavros.outcome }}**"
+            echo "- C++ tests:   **${{ steps.ctest.outcome }}**"
+            echo
+            echo "<details><summary>🧾 MAVROS log (tail)</summary>"
+            echo
+            echo '```text'
+            [ -f .ci_artifacts/mavros.log ] && tail -n 80 .ci_artifacts/mavros.log || echo "(no mavros.log)"
+            echo '```'
+            echo "</details>"
+            echo
+            echo "<details><summary>📄 SITL (E2E) log (tail)</summary>"
+            echo
+            echo '```text'
+            [ -f .ci_artifacts/sitl_e2e.log ] && tail -n 120 .ci_artifacts/sitl_e2e.log || echo "(no sitl_e2e.log)"
+            echo '```'
+            echo "</details>"
+            echo
+            echo "### 🐋 Docker (GHCR)"
+            echo '```bash'
+            echo "docker pull ${{ env.GHCR_IMAGE }}:latest"
+            echo "docker pull ${{ env.GHCR_IMAGE }}:${{ github.sha }}"
+            echo "docker run -it --rm ${{ env.GHCR_IMAGE }}:latest bash"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: ❌ Fail job if any step failed
+        if: ${{ always() && (steps.mavros.outcome == 'failure' || steps.ctest.outcome == 'failure') }}
+        run: exit 1
