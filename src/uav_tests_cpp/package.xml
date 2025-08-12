@@ -1,7 +1,8 @@
+<?xml version="1.0"?>
 <package format="3">
   <name>uav_tests_cpp</name>
   <version>0.0.1</version>
-  <description>GTest e2e tests for MAVROS</description>
+  <description>GTest e2e tests for MAVROS using candidate's uav_control_cpp</description>
 
   <maintainer email="you@example.com">you</maintainer>
   <license>MIT</license>
@@ -20,4 +21,8 @@
   <exec_depend>uav_control_cpp</exec_depend>
 
   <test_depend>ament_cmake_gtest</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
 </package>

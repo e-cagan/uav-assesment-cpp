@@ -7,12 +7,10 @@ if [[ -z "$GTEST_BIN" || ! -x "$GTEST_BIN" ]]; then
   exit 1
 fi
 
-# ROS env (nounset yüzünden patlamasın)
 set +u
 source /opt/ros/humble/setup.bash || true
 set -u
 
-# REPO_ROOT CMake'ten geliyorsa kullan; yoksa tests/../../..../ ile bul
 if [[ -z "${REPO_ROOT:-}" ]]; then
   REPO_ROOT="$(cd "$(dirname "$0")"/../../../.. && pwd)"
 fi
@@ -48,10 +46,8 @@ if [[ "$ok" -ne 1 ]]; then
   exit 3
 fi
 
-# GTest’i koştur
 "$GTEST_BIN"
 
-# Temizlik
 pkill -f px4_sitl_default 2>/dev/null || true
 pkill -f gzserver 2>/dev/null || true
 pkill -f gzclient 2>/dev/null || true
