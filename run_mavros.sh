@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -eo pipefail   # <— -u yok
 
+# Kullanım: ./run_mavros.sh [PORT]
 PORT="${1:-14557}"
 
-# ROS env (nounset patlamasın)
-set +u
-[ -f /opt/ros/humble/setup.bash ] && source /opt/ros/humble/setup.bash || true
-set -u
+if [ -f "/opt/ros/humble/setup.bash" ]; then
+  # ROS setup dosyası -u ile source edilemez, biz zaten -u kullanmıyoruz
+  source /opt/ros/humble/setup.bash
+fi
 
 URL="udp://:${PORT}@"
 echo "[MAVROS] starting mavros_node with fcu_url=${URL}"

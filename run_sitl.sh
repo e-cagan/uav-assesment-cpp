@@ -1,37 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# ROS env (nounset patlamasın)
-set +u
-[ -f /opt/ros/humble/setup.bash ] && source /opt/ros/humble/setup.bash || true
-set -u
+(cd /opt/PX4-Autopilot && HEADLESS=1 make px4_sitl gazebo >/tmp/sitl.log 2>&1 &)
 
-# PX4 kaynak dizini: Docker'da /opt/PX4-Autopilot, lokalde export edebilirsin
-PX4_DIR="${PX4_DIR:-/opt/PX4-Autopilot}"
-if [[ ! -d "$PX4_DIR" ]]; then
-  echo "[ERR] PX4_DIR not found: $PX4_DIR"
-  echo "Hint:  git clone https://github.com/PX4/PX4-Autopilot.git \$HOME/PX4-Autopilot"
-  echo "       export PX4_DIR=\$HOME/PX4-Autopilot"
-  exit 2
-fi
+for i in {1..30}; do
+  if pgrep -x gzserver >/dev/null 2>&1 && pgrep -f px4 >/dev/null 2>&1; then
+    echo "[OK] SITL up (gzserver & px4 running)"
+    head -n 50 /tmp/sitl.log || true
+    exit 0
+  fi
+  sleep 1
+done
 
-LOG="${SITL_LOG:-/tmp/sitl.log}"
-: > "$LOG"
-
-cd "$PX4_DIR"
-
-# Binary kontrol (lokalde derli değilse kullanıcıya ipucu ver)
-if [[ ! -x ./build/px4_sitl_default/bin/px4 ]]; then
-  echo "[ERR] PX4 SITL binary not found at $PX4_DIR/build/px4_sitl_default/bin/px4" | tee -a "$LOG"
-  echo "Build it first: 'make px4_sitl gazebo' (inside $PX4_DIR)" | tee -a "$LOG"
-  exit 3
-fi
-
-echo "[OK] SITL up (gzserver & px4 running)" | tee -a "$LOG"
-(
-  ./build/px4_sitl_default/bin/px4 \
-    ./build/px4_sitl_default/etc -s etc/init.d-posix/rcS -t ./test_data \
-    >> "$LOG" 2>&1
-) & disown
-
-sleep 2
+echo "[ERR] SITL failed to start. Log tail:"
+tail -n 200 /tmp/sitl.log || true
+exit 1
