@@ -128,41 +128,25 @@ jobs:
           name: ci-artifacts
           path: .ci_artifacts
 
-      # ---- GHCR Publish (always try to push) ----
-      - name: 🔐 Login to GHCR
-        if: ${{ github.event_name != 'pull_request' || github.repository_owner == github.actor }}
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: 📦 Publish image to GHCR
-        if: ${{ github.event_name != 'pull_request' || github.repository_owner == github.actor }}
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./Dockerfile
-          push: true
-          tags: |
-            ${{ env.GHCR_IMAGE }}:latest
-            ${{ env.GHCR_IMAGE }}:${{ github.sha }}
-          builder: ${{ steps.buildx.outputs.name }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      # ---- Summary (colored & collapsible) ----
+      # ---- Summary (colored text) ----
       - name: 📝 Summary
         if: always()
         shell: bash
         run: |
-          icon() { [ "$1" = "success" ] && echo "✅" || echo "❌"; }
+          status_color() {
+            if [ "$1" = "success" ]; then
+              echo "<span style='color:green'><b>SUCCESS</b></span>"
+            else
+              echo "<span style='color:red'><b>FAILURE</b></span>"
+            fi
+          }
+
           {
             echo "## 🛩️ UAV Assessment (C++)"
             echo
-            echo "- MAVROS smoke: $(icon '${{ steps.mavros_smoke.outcome }}') **${{ steps.mavros_smoke.outcome }}**"
-            echo "- Task 1 (Arm/Disarm): $(icon '${{ steps.task1.outcome }}') **${{ steps.task1.outcome }}**"
-            echo "- Task 2 (Takeoff/Land): $(icon '${{ steps.task2.outcome }}') **${{ steps.task2.outcome }}**"
+            echo "- MAVROS smoke: $(status_color '${{ steps.mavros_smoke.outcome }}')"
+            echo "- Task 1 (Arm/Disarm): $(status_color '${{ steps.task1.outcome }}')"
+            echo "- Task 2 (Takeoff/Land): $(status_color '${{ steps.task2.outcome }}')"
             echo
             echo "<details><summary>🧾 MAVROS smoke – log tail</summary>"
             echo
@@ -188,11 +172,4 @@ jobs:
             [ -f .ci_artifacts/task2_mavros.log ] && tail -n 80 .ci_artifacts/task2_mavros.log || echo "(no task2_mavros.log)"
             echo '```'
             echo "</details>"
-            echo
-            echo "### 🐋 Docker (GHCR)"
-            echo '```bash'
-            echo "docker pull ${{ env.GHCR_IMAGE }}:latest"
-            echo "docker pull ${{ env.GHCR_IMAGE }}:${{ github.sha }}"
-            echo "docker run -it --rm ${{ env.GHCR_IMAGE }}:latest bash"
-            echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
