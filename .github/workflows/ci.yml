@@ -46,11 +46,11 @@ jobs:
           chmod +x run_sitl.sh run_mavros.sh
           chmod +x src/uav_tests_cpp/tests/run_e2e.sh
 
-      # ---------------- MAVROS Smoke ----------------
+      # -------- MAVROS SMOKE --------
       - name: 🧪 MAVROS smoke
         id: mavros_smoke
         shell: bash
-        continue-on-error: true   # devam edelim
+        continue-on-error: true
         run: |
           set -o pipefail
           docker run --rm -t -v "$PWD":/ws -w /ws ${{ env.LOCAL_IMAGE }} bash -lc '
@@ -65,9 +65,7 @@ jobs:
             ok=0
             for i in $(seq 1 40); do
               source /opt/ros/humble/setup.bash
-              if ros2 topic list 2>/dev/null | grep -q "/mavros/state"; then
-                echo "[OK] MAVROS up"; ok=1; break
-              fi
+              if ros2 topic list 2>/dev/null | grep -q "/mavros/state"; then ok=1; break; fi
               sleep 0.5
             done
 
@@ -76,15 +74,15 @@ jobs:
 
             exit $([ "$ok" -eq 1 ] && echo 0 || echo 1)
           '
-          rc=$?
-          echo "rc=${rc}" >> "$GITHUB_OUTPUT"
+          echo "rc=$?" >> "$GITHUB_OUTPUT"
 
-      # ---------------- C++ Build ----------------
+      # -------- BUILD --------
       - name: 🧱 Build (colcon)
         id: build_cpp
         shell: bash
         continue-on-error: true
         run: |
+          set -o pipefail
           docker run --rm -t -v "$PWD":/ws -w /ws ${{ env.LOCAL_IMAGE }} bash -lc '
             set -eo pipefail
             source /opt/ros/humble/setup.bash
@@ -92,7 +90,7 @@ jobs:
           '
           echo "rc=$?" >> "$GITHUB_OUTPUT"
 
-      # ---------------- Task1 Test ----------------
+      # -------- TASK 1 --------
       - name: ▶️ Task 1 – Arm/Disarm
         id: task1
         shell: bash
@@ -104,18 +102,19 @@ jobs:
             source /opt/ros/humble/setup.bash
             source install/setup.bash
 
-            # Sadece E2E wrapper testini koştur
-            colcon test --packages-select uav_tests_cpp --ctest-args -R "^task1_arm_disarm$" -VV || true
+            rc=0
+            # NOT: "|| true" YOK — kodu yakalıyoruz
+            colcon test --packages-select uav_tests_cpp --ctest-args -R "^task1_arm_disarm$" -VV || rc=$?
             colcon test-result --all --verbose || true
 
             mkdir -p .ci_artifacts
             cp /tmp/sitl_e2e.log   .ci_artifacts/task1_sitl.log   2>/dev/null || true
             cp /tmp/mavros_e2e.log .ci_artifacts/task1_mavros.log 2>/dev/null || true
+            exit $rc
           '
-          rc=$?
-          echo "rc=${rc}" >> "$GITHUB_OUTPUT"
+          echo "rc=$?" >> "$GITHUB_OUTPUT"
 
-      # ---------------- Task2 Test ----------------
+      # -------- TASK 2 --------
       - name: ▶️ Task 2 – Takeoff/Land
         id: task2
         shell: bash
@@ -127,15 +126,16 @@ jobs:
             source /opt/ros/humble/setup.bash
             source install/setup.bash
 
-            colcon test --packages-select uav_tests_cpp --ctest-args -R "^task2_takeoff_land$" -VV || true
+            rc=0
+            colcon test --packages-select uav_tests_cpp --ctest-args -R "^task2_takeoff_land$" -VV || rc=$?
             colcon test-result --all --verbose || true
 
             mkdir -p .ci_artifacts
             cp /tmp/sitl_e2e.log   .ci_artifacts/task2_sitl.log   2>/dev/null || true
             cp /tmp/mavros_e2e.log .ci_artifacts/task2_mavros.log 2>/dev/null || true
+            exit $rc
           '
-          rc=$?
-          echo "rc=${rc}" >> "$GITHUB_OUTPUT"
+          echo "rc=$?" >> "$GITHUB_OUTPUT"
 
       - name: 📎 Upload artifacts
         if: always()
@@ -144,9 +144,9 @@ jobs:
           name: ci-artifacts
           path: .ci_artifacts
 
-      # ---- GHCR Publish (push even if tests fail; only if not PR & you own the repo) ----
+      # -------- GHCR PUSH (only main, not PR, owner) --------
       - name: 🔐 Login to GHCR
-        if: ${{ github.event_name != 'pull_request' && github.repository_owner == github.actor }}
+        if: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && github.repository_owner == github.actor }}
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -154,7 +154,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 📦 Publish image to GHCR
-        if: ${{ github.event_name != 'pull_request' && github.repository_owner == github.actor }}
+        if: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && github.repository_owner == github.actor }}
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -167,14 +167,18 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # ---- Summary (colored badges) ----
+      # -------- SUMMARY (colored badges) --------
       - name: 📝 Summary
         if: always()
         shell: bash
+        env:
+          RC_SMOKE: ${{ steps.mavros_smoke.outputs.rc }}
+          RC_TASK1: ${{ steps.task1.outputs.rc }}
+          RC_TASK2: ${{ steps.task2.outputs.rc }}
         run: |
           badge () {
             # $1: label  $2: rc (0/!=0)
-            if [ "$2" -eq 0 ]; then
+            if [ "${2:-1}" -eq 0 ]; then
               echo "![${1}](https://img.shields.io/badge/${1// /%20}-SUCCESS-brightgreen)"
             else
               echo "![${1}](https://img.shields.io/badge/${1// /%20}-FAILURE-red)"
@@ -183,9 +187,9 @@ jobs:
           {
             echo "## 🛩️ UAV Assessment (C++)"
             echo
-            echo "$(badge "MAVROS smoke"  ${{ steps.mavros_smoke.outputs.rc || 1 }})"
-            echo "$(badge "Task 1"        ${{ steps.task1.outputs.rc || 1 }})"
-            echo "$(badge "Task 2"        ${{ steps.task2.outputs.rc || 1 }})"
+            echo "$(badge "MAVROS smoke"  "${RC_SMOKE}")"
+            echo "$(badge "Task 1"        "${RC_TASK1}")"
+            echo "$(badge "Task 2"        "${RC_TASK2}")"
             echo
             echo "<details><summary>🧾 MAVROS smoke – log tail</summary>"
             echo
