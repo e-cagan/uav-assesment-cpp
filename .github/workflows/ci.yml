@@ -108,22 +108,46 @@ jobs:
             source /opt/ros/humble/setup.bash
             source install/setup.bash
 
+            # Sadece Task1
             colcon test --packages-select uav_tests_cpp --ctest-args -R "^task1_arm_disarm$" -VV || true
 
-            LOG="build/uav_tests_cpp/Testing/Temporary/LastTest.log"
-            status=unknown
+            B=build/uav_tests_cpp/Testing/Temporary
+            LOG="$B/LastTest.log"
+            FAIL_LIST="$B/LastTestsFailed.log"
+
+            # Logları sakla
+            mkdir -p .ci_artifacts
+            [ -f "$LOG" ] && cp "$LOG" .ci_artifacts/task1_ctest_raw.log || true
+            # ANSI renklerini temizle
             if [ -f "$LOG" ]; then
-              # Öncelik: FAILED -> OK -> SKIPPED (satır başına sabitle)
-              if   LC_ALL=C grep -E -q "^\[  FAILED  \]"  "$LOG"; then status=fail;
-              elif LC_ALL=C grep -E -q "^\[       OK \]" "$LOG"; then status=pass;
-              elif LC_ALL=C grep -E -q "^\[  SKIPPED \]" "$LOG"; then status=skip;
-              else status=skip; fi
-              cp "$LOG" .ci_artifacts/task1_ctest.log || true
+              sed -r "s/\x1B\[[0-9;]*[mK]//g" "$LOG" | sed -r "s/\r//g" > .ci_artifacts/task1_ctest.log || true
+            fi
+
+            status=unknown
+            if [ -s "$FAIL_LIST" ]; then
+              # CTest kesin olarak FAIL diyor
+              status=fail
+              cp "$FAIL_LIST" .ci_artifacts/task1_ctest_failed.list || true
+            elif [ -f .ci_artifacts/task1_ctest.log ]; then
+              # Öncelik: FAILED -> OK -> SKIPPED
+              if   grep -E -q "The following tests FAILED" .ci_artifacts/task1_ctest.log; then
+                status=fail
+              elif grep -E -q "^\[  FAILED  \]" .ci_artifacts/task1_ctest.log; then
+                status=fail
+              elif grep -E -q "^\[       OK \]" .ci_artifacts/task1_ctest.log; then
+                status=pass
+              elif grep -E -q "^\[  SKIPPED \]" .ci_artifacts/task1_ctest.log; then
+                status=skip
+              else
+                status=skip
+              fi
             else
               status=skip
             fi
 
             echo "$status" > .ci_artifacts/task1.status
+
+            # (Varsa) e2e logları topla
             cp /tmp/sitl_e2e.log   .ci_artifacts/task1_sitl.log   2>/dev/null || true
             cp /tmp/mavros_e2e.log .ci_artifacts/task1_mavros.log 2>/dev/null || true
           '
@@ -142,21 +166,42 @@ jobs:
             source /opt/ros/humble/setup.bash
             source install/setup.bash
 
+            # Sadece Task2
             colcon test --packages-select uav_tests_cpp --ctest-args -R "^task2_takeoff_land$" -VV || true
 
-            LOG="build/uav_tests_cpp/Testing/Temporary/LastTest.log"
-            status=unknown
+            B=build/uav_tests_cpp/Testing/Temporary
+            LOG="$B/LastTest.log"
+            FAIL_LIST="$B/LastTestsFailed.log"
+
+            # Logları sakla
+            mkdir -p .ci_artifacts
+            [ -f "$LOG" ] && cp "$LOG" .ci_artifacts/task2_ctest_raw.log || true
             if [ -f "$LOG" ]; then
-              if   LC_ALL=C grep -E -q "^\[  FAILED  \]"  "$LOG"; then status=fail;
-              elif LC_ALL=C grep -E -q "^\[       OK \]" "$LOG"; then status=pass;
-              elif LC_ALL=C grep -E -q "^\[  SKIPPED \]" "$LOG"; then status=skip;
-              else status=skip; fi
-              cp "$LOG" .ci_artifacts/task2_ctest.log || true
+              sed -r "s/\x1B\[[0-9;]*[mK]//g" "$LOG" | sed -r "s/\r//g" > .ci_artifacts/task2_ctest.log || true
+            fi
+
+            status=unknown
+            if [ -s "$FAIL_LIST" ]; then
+              status=fail
+              cp "$FAIL_LIST" .ci_artifacts/task2_ctest_failed.list || true
+            elif [ -f .ci_artifacts/task2_ctest.log ]; then
+              if   grep -E -q "The following tests FAILED" .ci_artifacts/task2_ctest.log; then
+                status=fail
+              elif grep -E -q "^\[  FAILED  \]" .ci_artifacts/task2_ctest.log; then
+                status=fail
+              elif grep -E -q "^\[       OK \]" .ci_artifacts/task2_ctest.log; then
+                status=pass
+              elif grep -E -q "^\[  SKIPPED \]" .ci_artifacts/task2_ctest.log; then
+                status=skip
+              else
+                status=skip
+              fi
             else
               status=skip
             fi
 
             echo "$status" > .ci_artifacts/task2.status
+
             cp /tmp/sitl_e2e.log   .ci_artifacts/task2_sitl.log   2>/dev/null || true
             cp /tmp/mavros_e2e.log .ci_artifacts/task2_mavros.log 2>/dev/null || true
           '
