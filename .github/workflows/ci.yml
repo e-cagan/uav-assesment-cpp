@@ -101,20 +101,22 @@ jobs:
         shell: bash
         continue-on-error: true
         run: |
-          set -euo pipefail
+          set -eo pipefail
           mkdir -p .ci_artifacts
           docker run --rm -t -v "$PWD":/ws -w /ws ${{ env.LOCAL_IMAGE }} bash -lc '
-            set -euo pipefail
-            source /opt/ros/humble/setup.bash
-            source install/setup.bash
+            set -eo pipefail
+            # ROS setup.bash nounset sevmez; -u KULLANMA
+            source /opt/ros/humble/setup.bash || true
+            [ -f install/setup.bash ] && source install/setup.bash || true
 
+            mkdir -p .ci_artifacts
             BIN="build/uav_tests_cpp/test_task1_arm_disarm"
             if [ ! -x "$BIN" ]; then
               echo skip > .ci_artifacts/task1.status
               exit 0
             fi
 
-            # GTest FAIL etse bile devam edip status yazabilelim
+            # GTest FAIL etse bile devam et
             set +e
             REPO_ROOT=/ws ./src/uav_tests_cpp/tests/run_e2e.sh "$BIN" 2>&1 | tee .ci_artifacts/task1_gtest.log
             code=${PIPESTATUS[0]}
@@ -129,7 +131,6 @@ jobs:
             fi
             echo "$status" > .ci_artifacts/task1.status
 
-            # Logları topla (varsa)
             cp /tmp/sitl_e2e.log   .ci_artifacts/task1_sitl.log   2>/dev/null || true
             cp /tmp/mavros_e2e.log .ci_artifacts/task1_mavros.log 2>/dev/null || true
           ' || true
@@ -141,13 +142,14 @@ jobs:
         shell: bash
         continue-on-error: true
         run: |
-          set -euo pipefail
+          set -eo pipefail
           mkdir -p .ci_artifacts
           docker run --rm -t -v "$PWD":/ws -w /ws ${{ env.LOCAL_IMAGE }} bash -lc '
-            set -euo pipefail
-            source /opt/ros/humble/setup.bash
-            source install/setup.bash
+            set -eo pipefail
+            source /opt/ros/humble/setup.bash || true
+            [ -f install/setup.bash ] && source install/setup.bash || true
 
+            mkdir -p .ci_artifacts
             BIN="build/uav_tests_cpp/test_task2_takeoff_land"
             if [ ! -x "$BIN" ]; then
               echo skip > .ci_artifacts/task2.status
@@ -172,7 +174,6 @@ jobs:
             cp /tmp/mavros_e2e.log .ci_artifacts/task2_mavros.log 2>/dev/null || true
           ' || true
           echo "status=$(cat .ci_artifacts/task2.status || echo unknown)" >> "$GITHUB_OUTPUT"
-
 
       - name: 📎 Upload artifacts
         if: always()
