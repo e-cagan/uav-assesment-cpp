@@ -47,7 +47,7 @@ jobs:
           chmod +x src/uav_tests_cpp/tests/run_e2e.sh || true
           mkdir -p .ci_artifacts
 
-      # ---------- MAVROS smoke (SITL+MAVROS ayağa kalkıyor mu?) ----------
+      # ---------- MAVROS smoke ----------
       - name: 🧪 MAVROS smoke
         id: smoke
         shell: bash
@@ -58,12 +58,10 @@ jobs:
             set -eo pipefail
             source /opt/ros/humble/setup.bash
 
-            # SITL & MAVROS başlat
             ./run_sitl.sh &
             sleep 5
             nohup ./run_mavros.sh 14557 > /tmp/mavros_smoke.log 2>&1 &
 
-            # Hazır mı?
             ok=0
             for i in $(seq 1 60); do
               source /opt/ros/humble/setup.bash
@@ -71,20 +69,13 @@ jobs:
               sleep 0.5
             done
 
-            # Logları topla (iki olası isim)
             mkdir -p .ci_artifacts
-            cp /tmp/sitl_e2e.log  .ci_artifacts/smoke_sitl.log  2>/dev/null || true
-            cp /tmp/sitl.log      .ci_artifacts/smoke_sitl.log  2>/dev/null || true
-            cp /tmp/mavros_smoke.log .ci_artifacts/smoke_mavros.log 2>/dev/null || true
+            cp /tmp/sitl_e2e.log      .ci_artifacts/smoke_sitl.log   2>/dev/null || true
+            cp /tmp/sitl.log          .ci_artifacts/smoke_sitl.log   2>/dev/null || true
+            cp /tmp/mavros_smoke.log  .ci_artifacts/smoke_mavros.log 2>/dev/null || true
 
-            # Çıkış kodunu/etiketi yaz
-            if [ "$ok" -eq 1 ]; then
-              echo pass > .ci_artifacts/smoke.status
-            else
-              echo fail > .ci_artifacts/smoke.status
-            fi
+            if [ "$ok" -eq 1 ]; then echo pass > .ci_artifacts/smoke.status; else echo fail > .ci_artifacts/smoke.status; fi
 
-            # temizlik
             pkill -f px4_sitl_default 2>/dev/null || true
             pkill -f gzserver 2>/dev/null || true
             pkill -f gzclient 2>/dev/null || true
@@ -122,9 +113,10 @@ jobs:
             LOG="build/uav_tests_cpp/Testing/Temporary/LastTest.log"
             status=unknown
             if [ -f "$LOG" ]; then
-              if   grep -q "\[  SKIPPED \]" "$LOG"; then status=skip;
-              elif grep -q "\[  FAILED  \]" "$LOG";  then status=fail;
-              elif grep -q "\[       OK \]" "$LOG";  then status=pass;
+              # Öncelik: FAILED -> OK -> SKIPPED (satır başına sabitle)
+              if   LC_ALL=C grep -E -q "^\[  FAILED  \]"  "$LOG"; then status=fail;
+              elif LC_ALL=C grep -E -q "^\[       OK \]" "$LOG"; then status=pass;
+              elif LC_ALL=C grep -E -q "^\[  SKIPPED \]" "$LOG"; then status=skip;
               else status=skip; fi
               cp "$LOG" .ci_artifacts/task1_ctest.log || true
             else
@@ -155,9 +147,9 @@ jobs:
             LOG="build/uav_tests_cpp/Testing/Temporary/LastTest.log"
             status=unknown
             if [ -f "$LOG" ]; then
-              if   grep -q "\[  SKIPPED \]" "$LOG"; then status=skip;
-              elif grep -q "\[  FAILED  \]" "$LOG";  then status=fail;
-              elif grep -q "\[       OK \]" "$LOG";  then status=pass;
+              if   LC_ALL=C grep -E -q "^\[  FAILED  \]"  "$LOG"; then status=fail;
+              elif LC_ALL=C grep -E -q "^\[       OK \]" "$LOG"; then status=pass;
+              elif LC_ALL=C grep -E -q "^\[  SKIPPED \]" "$LOG"; then status=skip;
               else status=skip; fi
               cp "$LOG" .ci_artifacts/task2_ctest.log || true
             else
@@ -258,7 +250,7 @@ jobs:
             echo "</details>"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      # ---------- Fail job only if a task failed (smoke isteğe bağlı) ----------
+      # ---------- Fail job only if a task failed ----------
       - name: ❌ Fail job if any task failed
         if: ${{ always() && (steps.task1.outputs.status == 'fail' || steps.task2.outputs.status == 'fail') }}
         run: exit 1
