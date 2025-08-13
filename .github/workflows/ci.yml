@@ -103,9 +103,8 @@ jobs:
             source /opt/ros/humble/setup.bash
             source install/setup.bash
 
-            # Testleri koştur ama rc'yi test-result'tan al
-            colcon test --packages-select uav_tests_cpp --ctest-args -R "^task1_arm_disarm$" -VV || true
-            colcon test-result --all --verbose
+            ctest --test-dir build/uav_tests_cpp \
+                  -R ^task1_arm_disarm$ -VV --output-on-failure --no-tests=error
             rc=$?
 
             mkdir -p .ci_artifacts
@@ -128,8 +127,8 @@ jobs:
             source /opt/ros/humble/setup.bash
             source install/setup.bash
 
-            colcon test --packages-select uav_tests_cpp --ctest-args -R "^task2_takeoff_land$" -VV || true
-            colcon test-result --all --verbose
+            ctest --test-dir build/uav_tests_cpp \
+                  -R ^task2_takeoff_land$ -VV --output-on-failure --no-tests=error
             rc=$?
 
             mkdir -p .ci_artifacts
