@@ -108,41 +108,23 @@ jobs:
             source /opt/ros/humble/setup.bash
             source install/setup.bash
 
-            # Sadece Task1
-            colcon test --packages-select uav_tests_cpp --ctest-args -R "^task1_arm_disarm$" -VV || true
+            # CTest'i doğrudan çalıştır: sadece task1_arm_disarm
+            # Çıktıyı hosta bind edilen .ci_artifacts içine tee ile yaz
+            ctest --test-dir build/uav_tests_cpp \
+                  -R "^task1_arm_disarm$" \
+                  --output-on-failure -VV \
+                  | tee .ci_artifacts/task1_ctest.log
+            code=${PIPESTATUS[0]}
 
-            B=build/uav_tests_cpp/Testing/Temporary
-            LOG="$B/LastTest.log"
-            FAIL_LIST="$B/LastTestsFailed.log"
-
-            # Logları sakla
-            mkdir -p .ci_artifacts
-            [ -f "$LOG" ] && cp "$LOG" .ci_artifacts/task1_ctest_raw.log || true
-            # ANSI renklerini temizle
-            if [ -f "$LOG" ]; then
-              sed -r "s/\x1B\[[0-9;]*[mK]//g" "$LOG" | sed -r "s/\r//g" > .ci_artifacts/task1_ctest.log || true
-            fi
-
-            status=unknown
-            if [ -s "$FAIL_LIST" ]; then
-              # CTest kesin olarak FAIL diyor
+            # Durumu belirle
+            if [ "$code" -ne 0 ]; then
               status=fail
-              cp "$FAIL_LIST" .ci_artifacts/task1_ctest_failed.list || true
-            elif [ -f .ci_artifacts/task1_ctest.log ]; then
-              # Öncelik: FAILED -> OK -> SKIPPED
-              if   grep -E -q "The following tests FAILED" .ci_artifacts/task1_ctest.log; then
-                status=fail
-              elif grep -E -q "^\[  FAILED  \]" .ci_artifacts/task1_ctest.log; then
-                status=fail
-              elif grep -E -q "^\[       OK \]" .ci_artifacts/task1_ctest.log; then
-                status=pass
-              elif grep -E -q "^\[  SKIPPED \]" .ci_artifacts/task1_ctest.log; then
+            else
+              if grep -F -q "[  SKIPPED ]" .ci_artifacts/task1_ctest.log; then
                 status=skip
               else
-                status=skip
+                status=pass
               fi
-            else
-              status=skip
             fi
 
             echo "$status" > .ci_artifacts/task1.status
@@ -166,38 +148,20 @@ jobs:
             source /opt/ros/humble/setup.bash
             source install/setup.bash
 
-            # Sadece Task2
-            colcon test --packages-select uav_tests_cpp --ctest-args -R "^task2_takeoff_land$" -VV || true
+            ctest --test-dir build/uav_tests_cpp \
+                  -R "^task2_takeoff_land$" \
+                  --output-on-failure -VV \
+                  | tee .ci_artifacts/task2_ctest.log
+            code=${PIPESTATUS[0]}
 
-            B=build/uav_tests_cpp/Testing/Temporary
-            LOG="$B/LastTest.log"
-            FAIL_LIST="$B/LastTestsFailed.log"
-
-            # Logları sakla
-            mkdir -p .ci_artifacts
-            [ -f "$LOG" ] && cp "$LOG" .ci_artifacts/task2_ctest_raw.log || true
-            if [ -f "$LOG" ]; then
-              sed -r "s/\x1B\[[0-9;]*[mK]//g" "$LOG" | sed -r "s/\r//g" > .ci_artifacts/task2_ctest.log || true
-            fi
-
-            status=unknown
-            if [ -s "$FAIL_LIST" ]; then
+            if [ "$code" -ne 0 ]; then
               status=fail
-              cp "$FAIL_LIST" .ci_artifacts/task2_ctest_failed.list || true
-            elif [ -f .ci_artifacts/task2_ctest.log ]; then
-              if   grep -E -q "The following tests FAILED" .ci_artifacts/task2_ctest.log; then
-                status=fail
-              elif grep -E -q "^\[  FAILED  \]" .ci_artifacts/task2_ctest.log; then
-                status=fail
-              elif grep -E -q "^\[       OK \]" .ci_artifacts/task2_ctest.log; then
-                status=pass
-              elif grep -E -q "^\[  SKIPPED \]" .ci_artifacts/task2_ctest.log; then
+            else
+              if grep -F -q "[  SKIPPED ]" .ci_artifacts/task2_ctest.log; then
                 status=skip
               else
-                status=skip
+                status=pass
               fi
-            else
-              status=skip
             fi
 
             echo "$status" > .ci_artifacts/task2.status
