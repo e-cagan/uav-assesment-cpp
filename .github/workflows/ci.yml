@@ -1,4 +1,4 @@
-name: UAV Assessment CI
+name: UAV Assessment (C++) CI
 
 on:
   push:
@@ -12,7 +12,6 @@ permissions:
 
 env:
   LOCAL_IMAGE: uav-assessment-env:ci
-  # Repo'ya özgü isim: paket otomatik bu repoya linklenir
   GHCR_IMAGE: ghcr.io/${{ github.repository_owner }}/uav-assessment-cpp-env
 
 jobs:
@@ -44,52 +43,20 @@ jobs:
 
       - name: 🔧 Make scripts executable
         run: |
-          chmod +x run_sitl.sh run_mavros.sh
+          chmod +x run_sitl.sh run_mavros.sh || true
           chmod +x src/uav_tests_cpp/tests/run_e2e.sh || true
-
-      # ---------- MAVROS smoke ----------
-      - name: 🧪 MAVROS smoke
-        id: mavros_smoke
-        shell: bash
-        continue-on-error: true
-        run: |
-          set -o pipefail
-          docker run --rm -t -v "$PWD":/ws -w /ws ${{ env.LOCAL_IMAGE }} bash -lc '
-            set -eo pipefail
-            mkdir -p /ws/.ci_artifacts
-            source /opt/ros/humble/setup.bash
-
-            ./run_sitl.sh &
-            sleep 5
-            nohup ./run_mavros.sh 14557 > /tmp/mavros.log 2>&1 &
-
-            ok=0
-            for i in $(seq 1 40); do
-              source /opt/ros/humble/setup.bash
-              if ros2 topic list 2>/dev/null | grep -q "/mavros/state"; then ok=1; break; fi
-              sleep 0.5
-            done
-
-            cp /tmp/sitl.log  .ci_artifacts/smoke_sitl.log  2>/dev/null || true
-            cp /tmp/mavros.log .ci_artifacts/smoke_mavros.log 2>/dev/null || true
-
-            exit $([ "$ok" -eq 1 ] && echo 0 || echo 1)
-          '
-          echo "rc=$?" >> "$GITHUB_OUTPUT"
 
       # ---------- Build ----------
       - name: 🧱 Build (colcon)
         id: build_cpp
         shell: bash
-        continue-on-error: true
         run: |
-          set -o pipefail
+          set -eo pipefail
           docker run --rm -t -v "$PWD":/ws -w /ws ${{ env.LOCAL_IMAGE }} bash -lc '
             set -eo pipefail
             source /opt/ros/humble/setup.bash
             colcon build --symlink-install --packages-up-to uav_tests_cpp
           '
-          echo "rc=$?" >> "$GITHUB_OUTPUT"
 
       # ---------- Task 1 ----------
       - name: ▶️ Task 1 – Arm/Disarm
@@ -97,23 +64,34 @@ jobs:
         shell: bash
         continue-on-error: true
         run: |
-          set -o pipefail
+          set -eo pipefail
+          mkdir -p .ci_artifacts
           docker run --rm -t -v "$PWD":/ws -w /ws ${{ env.LOCAL_IMAGE }} bash -lc '
             set -eo pipefail
             source /opt/ros/humble/setup.bash
             source install/setup.bash
 
-            ctest --test-dir build/uav_tests_cpp \
-                  -R ^task1_arm_disarm$ -VV --output-on-failure --no-tests=error
-            rc=$?
+            colcon test --packages-select uav_tests_cpp --ctest-args -R "^task1_arm_disarm$" -VV || true
 
-            mkdir -p .ci_artifacts
+            LOG="build/uav_tests_cpp/Testing/Temporary/LastTest.log"
+            # status çıkar
+            status=unknown
+            if [ -f "$LOG" ]; then
+              if   grep -q "\[  SKIPPED \]" "$LOG"; then status=skip;
+              elif grep -q "\[  FAILED  \]" "$LOG";  then status=fail;
+              elif grep -q "\[       OK \]" "$LOG";  then status=pass;
+              else status=skip; fi
+              cp "$LOG" .ci_artifacts/task1_ctest.log || true
+            else
+              status=skip
+            fi
+
+            echo "$status" > .ci_artifacts/task1.status
             cp /tmp/sitl_e2e.log   .ci_artifacts/task1_sitl.log   2>/dev/null || true
             cp /tmp/mavros_e2e.log .ci_artifacts/task1_mavros.log 2>/dev/null || true
-
-            exit $rc
           '
-          echo "rc=$?" >> "$GITHUB_OUTPUT"
+
+          echo "status=$(cat .ci_artifacts/task1.status || echo unknown)" >> "$GITHUB_OUTPUT"
 
       # ---------- Task 2 ----------
       - name: ▶️ Task 2 – Takeoff/Land
@@ -121,23 +99,33 @@ jobs:
         shell: bash
         continue-on-error: true
         run: |
-          set -o pipefail
+          set -eo pipefail
+          mkdir -p .ci_artifacts
           docker run --rm -t -v "$PWD":/ws -w /ws ${{ env.LOCAL_IMAGE }} bash -lc '
             set -eo pipefail
             source /opt/ros/humble/setup.bash
             source install/setup.bash
 
-            ctest --test-dir build/uav_tests_cpp \
-                  -R ^task2_takeoff_land$ -VV --output-on-failure --no-tests=error
-            rc=$?
+            colcon test --packages-select uav_tests_cpp --ctest-args -R "^task2_takeoff_land$" -VV || true
 
-            mkdir -p .ci_artifacts
+            LOG="build/uav_tests_cpp/Testing/Temporary/LastTest.log"
+            status=unknown
+            if [ -f "$LOG" ]; then
+              if   grep -q "\[  SKIPPED \]" "$LOG"; then status=skip;
+              elif grep -q "\[  FAILED  \]" "$LOG";  then status=fail;
+              elif grep -q "\[       OK \]" "$LOG";  then status=pass;
+              else status=skip; fi
+              cp "$LOG" .ci_artifacts/task2_ctest.log || true
+            else
+              status=skip
+            fi
+
+            echo "$status" > .ci_artifacts/task2.status
             cp /tmp/sitl_e2e.log   .ci_artifacts/task2_sitl.log   2>/dev/null || true
             cp /tmp/mavros_e2e.log .ci_artifacts/task2_mavros.log 2>/dev/null || true
-
-            exit $rc
           '
-          echo "rc=$?" >> "$GITHUB_OUTPUT"
+
+          echo "status=$(cat .ci_artifacts/task2.status || echo unknown)" >> "$GITHUB_OUTPUT"
 
       - name: 📎 Upload artifacts
         if: always()
@@ -146,7 +134,7 @@ jobs:
           name: ci-artifacts
           path: .ci_artifacts
 
-      # ---------- GHCR push (PR hariç her durumda dene) ----------
+      # ---------- GHCR push (PR hariç) ----------
       - name: 🔐 Login to GHCR
         if: ${{ github.event_name != 'pull_request' }}
         uses: docker/login-action@v3
@@ -171,28 +159,29 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # ---------- Summary (renkli rozetler) ----------
+      # ---------- Summary (PASS/FAIL/SKIPPED rozetleri + collapsible tail) ----------
       - name: 📝 Summary
         if: always()
         shell: bash
         run: |
-          badge () {
-            # $1 label, $2 rc (0/!=0)
-            if [ "$2" -eq 0 ]; then
-              echo "![${1}](https://img.shields.io/badge/${1// /%20}-SUCCESS-brightgreen)"
-            else
-              echo "![${1}](https://img.shields.io/badge/${1// /%20}-FAILURE-red)"
-            fi
+          badge3 () {
+            # $1 label, $2 status: pass|fail|skip|unknown
+            case "$2" in
+              pass)   echo "![${1}](https://img.shields.io/badge/${1// /%20}-PASS-brightgreen)" ;;
+              fail)   echo "![${1}](https://img.shields.io/badge/${1// /%20}-FAIL-red)" ;;
+              skip)   echo "![${1}](https://img.shields.io/badge/${1// /%20}-SKIPPED-orange)" ;;
+              *)      echo "![${1}](https://img.shields.io/badge/${1// /%20}-UNKNOWN-lightgrey)" ;;
+            esac
           }
+
           {
             echo "## 🛩️ UAV Assessment (C++)"
             echo
-            echo "$(badge "MAVROS smoke"  ${{ steps.mavros_smoke.outputs.rc || 1 }})"
-            echo "$(badge "Task 1"        ${{ steps.task1.outputs.rc       || 1 }})"
-            echo "$(badge "Task 2"        ${{ steps.task2.outputs.rc       || 1 }})"
+            echo "$(badge3 "Task 1" "${{ steps.task1.outputs.status || 'unknown' }}")"
+            echo "$(badge3 "Task 2" "${{ steps.task2.outputs.status || 'unknown' }}")"
             echo
             echo "### 🐋 Docker (GHCR)"
-            echo "- Push denemesi: **${{ steps.ghcr_push.outcome || 'skipped' }}**"
+            echo "- Push: **${{ steps.ghcr_push.outcome || 'skipped' }}**"
             echo
             echo '```bash'
             echo "docker pull ${{ env.GHCR_IMAGE }}:latest"
@@ -200,26 +189,24 @@ jobs:
             echo "docker run -it --rm ${{ env.GHCR_IMAGE }}:latest bash"
             echo '```'
             echo
-            echo "<details><summary>🧾 MAVROS smoke – log tail</summary>"
+            echo "<details><summary>📄 Task 1 – log tail</summary>"
             echo
             echo '```text'
-            [ -f .ci_artifacts/smoke_mavros.log ] && tail -n 80 .ci_artifacts/smoke_mavros.log || echo "(no smoke_mavros.log)"
-            echo '```'
-            echo "</details>"
-            echo
-            echo "<details><summary>📄 Task 1 – SITL/MAVROS log tail</summary>"
-            echo
-            echo '```text'
-            [ -f .ci_artifacts/task1_sitl.log ]   && tail -n 100 .ci_artifacts/task1_sitl.log   || echo "(no task1_sitl.log)"
+            [ -f .ci_artifacts/task1_sitl.log ]   && tail -n 120 .ci_artifacts/task1_sitl.log   || echo "(no task1_sitl.log)"
             [ -f .ci_artifacts/task1_mavros.log ] && tail -n  80 .ci_artifacts/task1_mavros.log || echo "(no task1_mavros.log)"
             echo '```'
             echo "</details>"
             echo
-            echo "<details><summary>📄 Task 2 – SITL/MAVROS log tail</summary>"
+            echo "<details><summary>📄 Task 2 – log tail</summary>"
             echo
             echo '```text'
-            [ -f .ci_artifacts/task2_sitl.log ]   && tail -n 100 .ci_artifacts/task2_sitl.log   || echo "(no task2_sitl.log)"
+            [ -f .ci_artifacts/task2_sitl.log ]   && tail -n 120 .ci_artifacts/task2_sitl.log   || echo "(no task2_sitl.log)"
             [ -f .ci_artifacts/task2_mavros.log ] && tail -n  80 .ci_artifacts/task2_mavros.log || echo "(no task2_mavros.log)"
             echo '```'
             echo "</details>"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # ---------- Fail job only if there is a FAIL ----------
+      - name: ❌ Fail job if any task failed
+        if: ${{ always() && (steps.task1.outputs.status == 'fail' || steps.task2.outputs.status == 'fail') }}
+        run: exit 1

@@ -1,4 +1,5 @@
 #include "uav_control_cpp/mavros_client.hpp"
+#include "uav_control_cpp/not_implemented.hpp"   // <-- EKLENDİ
 #include <thread>
 #include <stdexcept>
 
@@ -7,25 +8,20 @@ using namespace std::chrono_literals;
 MavrosClient::MavrosClient() {}
 
 void MavrosClient::init() {
-  throw std::logic_error("TODO: implement init()");
+  throw uav::NotImplemented("init()");
 }
-
 bool MavrosClient::wait_for_mavros(double) {
-  throw std::logic_error("TODO: implement wait_for_mavros()");
+  throw uav::NotImplemented("wait_for_mavros()");
 }
-
 bool MavrosClient::arm(bool, double) {
-  throw std::logic_error("TODO: implement arm()");
+  throw uav::NotImplemented("arm()");
 }
-
 bool MavrosClient::set_mode(const std::string &, double) {
-  throw std::logic_error("TODO: implement set_mode()");
+  throw uav::NotImplemented("set_mode()");
 }
-
 void MavrosClient::pump_setpoints(double, int, std::chrono::milliseconds) {
-  throw std::logic_error("TODO: implement pump_setpoints()");
+  throw uav::NotImplemented("pump_setpoints()");
 }
-
 bool MavrosClient::wait_alt_ge(double, double) {
-  throw std::logic_error("TODO: implement wait_alt_ge()");
+  throw uav::NotImplemented("wait_alt_ge()");
 }
