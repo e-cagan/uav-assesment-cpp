@@ -21,9 +21,7 @@ TEST_F(MavrosFixture, ArmDisarm) {
   } catch (const std::logic_error& e) {
     GTEST_SKIP() << "Candidate not implemented: wait_for_mavros() - " << e.what();
   }
-  if (!ready) {
-    GTEST_SKIP() << "MAVROS services not ready";
-  }
+  ASSERT_TRUE(ready) << "MAVROS services not ready in time";
 
   // arm(true)
   bool ok = false;
