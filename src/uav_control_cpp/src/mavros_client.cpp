@@ -1,42 +1,35 @@
 #include "uav_control_cpp/mavros_client.hpp"
-#include <thread>
 #include <stdexcept>
-
+#include <thread>
 using namespace std::chrono_literals;
 
 MavrosClient::MavrosClient() {}
 
 void MavrosClient::init() {
-  // Sadece ROS node/executor oluştur – gerçek MAVROS bağları yok.
-  if (!rclcpp::ok()) {
-    int argc = 0;
-    char **argv = nullptr;
-    rclcpp::init(argc, argv);
-  }
-  node_ = rclcpp::Node::make_shared("dummy_mavros_client");
-  exec_ = std::make_shared<rclcpp::executors::SingleThreadedExecutor>();
-  exec_->add_node(node_);
+  // Bilerek boş: throw yok -> test devam etsin
 }
 
 bool MavrosClient::wait_for_mavros(double /*timeout_s*/) {
-  // “Hazır” gibi davran
+  // Ortam hazır varsay: TRUE döndür -> test devam etsin
   return true;
 }
 
 bool MavrosClient::arm(bool /*value*/, double /*timeout_s*/) {
-  // BİLEREK BAŞARISIZ: Task1 FAIL etsin
+  // Bilerek yanlış davranış: FALSE döndür -> Task1 FAIL olsun
   return false;
 }
 
 bool MavrosClient::set_mode(const std::string& /*mode*/, double /*timeout_s*/) {
-  // Task2’yi SKIP’e düşürmek için not-implemented
-  throw std::logic_error("TODO: implement set_mode()");
+  // Aday kodu eksik -> Task2'de ilk set_mode çağrısında SKIP'e düşsün
+  throw std::logic_error("not implemented: set_mode");
 }
 
 void MavrosClient::pump_setpoints(double /*z*/, int /*count*/, std::chrono::milliseconds /*dt*/) {
-  throw std::logic_error("TODO: implement pump_setpoints()");
+  // Task2'nin OFFBOARD ön-ısınma adımında SKIP'e düşürmek için
+  throw std::logic_error("not implemented: pump_setpoints");
 }
 
 bool MavrosClient::wait_alt_ge(double /*alt*/, double /*timeout_s*/) {
-  throw std::logic_error("TODO: implement wait_alt_ge()");
+  // Task2 bu aşamaya gelirse yine SKIP'e düşsün
+  throw std::logic_error("not implemented: wait_alt_ge");
 }
