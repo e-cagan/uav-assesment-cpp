@@ -45,6 +45,52 @@ jobs:
         run: |
           chmod +x run_sitl.sh run_mavros.sh || true
           chmod +x src/uav_tests_cpp/tests/run_e2e.sh || true
+          mkdir -p .ci_artifacts
+
+      # ---------- MAVROS smoke (SITL+MAVROS ayağa kalkıyor mu?) ----------
+      - name: 🧪 MAVROS smoke
+        id: smoke
+        shell: bash
+        continue-on-error: true
+        run: |
+          set -eo pipefail
+          docker run --rm -t -v "$PWD":/ws -w /ws ${{ env.LOCAL_IMAGE }} bash -lc '
+            set -eo pipefail
+            source /opt/ros/humble/setup.bash
+
+            # SITL & MAVROS başlat
+            ./run_sitl.sh &
+            sleep 5
+            nohup ./run_mavros.sh 14557 > /tmp/mavros_smoke.log 2>&1 &
+
+            # Hazır mı?
+            ok=0
+            for i in $(seq 1 60); do
+              source /opt/ros/humble/setup.bash
+              if ros2 topic list 2>/dev/null | grep -q "/mavros/state"; then ok=1; break; fi
+              sleep 0.5
+            done
+
+            # Logları topla (iki olası isim)
+            mkdir -p .ci_artifacts
+            cp /tmp/sitl_e2e.log  .ci_artifacts/smoke_sitl.log  2>/dev/null || true
+            cp /tmp/sitl.log      .ci_artifacts/smoke_sitl.log  2>/dev/null || true
+            cp /tmp/mavros_smoke.log .ci_artifacts/smoke_mavros.log 2>/dev/null || true
+
+            # Çıkış kodunu/etiketi yaz
+            if [ "$ok" -eq 1 ]; then
+              echo pass > .ci_artifacts/smoke.status
+            else
+              echo fail > .ci_artifacts/smoke.status
+            fi
+
+            # temizlik
+            pkill -f px4_sitl_default 2>/dev/null || true
+            pkill -f gzserver 2>/dev/null || true
+            pkill -f gzclient 2>/dev/null || true
+            pkill -f mavros_node 2>/dev/null || true
+          '
+          echo "status=$(cat .ci_artifacts/smoke.status || echo unknown)" >> "$GITHUB_OUTPUT"
 
       # ---------- Build ----------
       - name: 🧱 Build (colcon)
@@ -74,7 +120,6 @@ jobs:
             colcon test --packages-select uav_tests_cpp --ctest-args -R "^task1_arm_disarm$" -VV || true
 
             LOG="build/uav_tests_cpp/Testing/Temporary/LastTest.log"
-            # status çıkar
             status=unknown
             if [ -f "$LOG" ]; then
               if   grep -q "\[  SKIPPED \]" "$LOG"; then status=skip;
@@ -90,7 +135,6 @@ jobs:
             cp /tmp/sitl_e2e.log   .ci_artifacts/task1_sitl.log   2>/dev/null || true
             cp /tmp/mavros_e2e.log .ci_artifacts/task1_mavros.log 2>/dev/null || true
           '
-
           echo "status=$(cat .ci_artifacts/task1.status || echo unknown)" >> "$GITHUB_OUTPUT"
 
       # ---------- Task 2 ----------
@@ -124,7 +168,6 @@ jobs:
             cp /tmp/sitl_e2e.log   .ci_artifacts/task2_sitl.log   2>/dev/null || true
             cp /tmp/mavros_e2e.log .ci_artifacts/task2_mavros.log 2>/dev/null || true
           '
-
           echo "status=$(cat .ci_artifacts/task2.status || echo unknown)" >> "$GITHUB_OUTPUT"
 
       - name: 📎 Upload artifacts
@@ -133,6 +176,8 @@ jobs:
         with:
           name: ci-artifacts
           path: .ci_artifacts
+          if-no-files-found: warn
+          retention-days: 7
 
       # ---------- GHCR push (PR hariç) ----------
       - name: 🔐 Login to GHCR
@@ -159,26 +204,25 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # ---------- Summary (PASS/FAIL/SKIPPED rozetleri + collapsible tail) ----------
+      # ---------- Summary ----------
       - name: 📝 Summary
         if: always()
         shell: bash
         run: |
           badge3 () {
-            # $1 label, $2 status: pass|fail|skip|unknown
             case "$2" in
-              pass)   echo "![${1}](https://img.shields.io/badge/${1// /%20}-PASS-brightgreen)" ;;
-              fail)   echo "![${1}](https://img.shields.io/badge/${1// /%20}-FAIL-red)" ;;
-              skip)   echo "![${1}](https://img.shields.io/badge/${1// /%20}-SKIPPED-orange)" ;;
-              *)      echo "![${1}](https://img.shields.io/badge/${1// /%20}-UNKNOWN-lightgrey)" ;;
+              pass) echo "![${1}](https://img.shields.io/badge/${1// /%20}-PASS-brightgreen)";;
+              fail) echo "![${1}](https://img.shields.io/badge/${1// /%20}-FAIL-red)";;
+              skip) echo "![${1}](https://img.shields.io/badge/${1// /%20}-SKIPPED-orange)";;
+              *)    echo "![${1}](https://img.shields.io/badge/${1// /%20}-UNKNOWN-lightgrey)";;
             esac
           }
-
           {
             echo "## 🛩️ UAV Assessment (C++)"
             echo
-            echo "$(badge3 "Task 1" "${{ steps.task1.outputs.status || 'unknown' }}")"
-            echo "$(badge3 "Task 2" "${{ steps.task2.outputs.status || 'unknown' }}")"
+            echo "$(badge3 "MAVROS smoke" "${{ steps.smoke.outputs.status || 'unknown' }}")"
+            echo "$(badge3 "Task 1"       "${{ steps.task1.outputs.status  || 'unknown' }}")"
+            echo "$(badge3 "Task 2"       "${{ steps.task2.outputs.status  || 'unknown' }}")"
             echo
             echo "### 🐋 Docker (GHCR)"
             echo "- Push: **${{ steps.ghcr_push.outcome || 'skipped' }}**"
@@ -188,6 +232,14 @@ jobs:
             echo "docker pull ${{ env.GHCR_IMAGE }}:${{ github.sha }}"
             echo "docker run -it --rm ${{ env.GHCR_IMAGE }}:latest bash"
             echo '```'
+            echo
+            echo "<details><summary>🧾 MAVROS smoke – log tail</summary>"
+            echo
+            echo '```text'
+            [ -f .ci_artifacts/smoke_sitl.log ]   && tail -n 80 .ci_artifacts/smoke_sitl.log   || echo "(no smoke_sitl.log)"
+            [ -f .ci_artifacts/smoke_mavros.log ] && tail -n 60 .ci_artifacts/smoke_mavros.log || echo "(no smoke_mavros.log)"
+            echo '```'
+            echo "</details>"
             echo
             echo "<details><summary>📄 Task 1 – log tail</summary>"
             echo
@@ -206,7 +258,7 @@ jobs:
             echo "</details>"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      # ---------- Fail job only if there is a FAIL ----------
+      # ---------- Fail job only if a task failed (smoke isteğe bağlı) ----------
       - name: ❌ Fail job if any task failed
         if: ${{ always() && (steps.task1.outputs.status == 'fail' || steps.task2.outputs.status == 'fail') }}
         run: exit 1
