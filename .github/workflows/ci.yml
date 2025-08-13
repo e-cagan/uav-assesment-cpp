@@ -211,8 +211,8 @@ jobs:
         run: |
           badge3 () {
             case "$2" in
-              pass) echo "![${1}](https://img.shields.io/badge/${1// /%20}-PASS-brightgreen)";;
-              fail) echo "![${1}](https://img.shields.io/badge/${1// /%20}-FAIL-red)";;
+              pass) echo "![${1}](https://img.shields.io/badge/${1// /%20}-PASSED-brightgreen)";;
+              fail) echo "![${1}](https://img.shields.io/badge/${1// /%20}-FAILED-red)";;
               skip) echo "![${1}](https://img.shields.io/badge/${1// /%20}-SKIPPED-orange)";;
               *)    echo "![${1}](https://img.shields.io/badge/${1// /%20}-UNKNOWN-lightgrey)";;
             esac
