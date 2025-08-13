@@ -101,38 +101,38 @@ jobs:
         shell: bash
         continue-on-error: true
         run: |
-          set -eo pipefail
+          set -euo pipefail
           mkdir -p .ci_artifacts
           docker run --rm -t -v "$PWD":/ws -w /ws ${{ env.LOCAL_IMAGE }} bash -lc '
-            set -eo pipefail
+            set -euo pipefail
             source /opt/ros/humble/setup.bash
             source install/setup.bash
 
             BIN="build/uav_tests_cpp/test_task1_arm_disarm"
             if [ ! -x "$BIN" ]; then
-              echo "(missing $BIN)"; echo skip > .ci_artifacts/task1.status; exit 0
+              echo skip > .ci_artifacts/task1.status
+              exit 0
             fi
 
-            # E2E runner ile doğrudan gtest çalıştır
-            REPO_ROOT=/ws ./src/uav_tests_cpp/tests/run_e2e.sh "$BIN" \
-              | tee .ci_artifacts/task1_gtest.log
+            # GTest FAIL etse bile devam edip status yazabilelim
+            set +e
+            REPO_ROOT=/ws ./src/uav_tests_cpp/tests/run_e2e.sh "$BIN" 2>&1 | tee .ci_artifacts/task1_gtest.log
             code=${PIPESTATUS[0]}
+            set -e
 
             if [ "$code" -ne 0 ]; then
               status=fail
+            elif grep -F -q "[  SKIPPED ]" .ci_artifacts/task1_gtest.log; then
+              status=skip
             else
-              if grep -F -q "[  SKIPPED ]" .ci_artifacts/task1_gtest.log; then
-                status=skip
-              else
-                status=pass
-              fi
+              status=pass
             fi
             echo "$status" > .ci_artifacts/task1.status
 
-            # (Varsa) e2e loglarını topla
+            # Logları topla (varsa)
             cp /tmp/sitl_e2e.log   .ci_artifacts/task1_sitl.log   2>/dev/null || true
             cp /tmp/mavros_e2e.log .ci_artifacts/task1_mavros.log 2>/dev/null || true
-          '
+          ' || true
           echo "status=$(cat .ci_artifacts/task1.status || echo unknown)" >> "$GITHUB_OUTPUT"
 
       # ---------- Task 2 ----------
@@ -141,37 +141,38 @@ jobs:
         shell: bash
         continue-on-error: true
         run: |
-          set -eo pipefail
+          set -euo pipefail
           mkdir -p .ci_artifacts
           docker run --rm -t -v "$PWD":/ws -w /ws ${{ env.LOCAL_IMAGE }} bash -lc '
-            set -eo pipefail
+            set -euo pipefail
             source /opt/ros/humble/setup.bash
             source install/setup.bash
 
             BIN="build/uav_tests_cpp/test_task2_takeoff_land"
             if [ ! -x "$BIN" ]; then
-              echo "(missing $BIN)"; echo skip > .ci_artifacts/task2.status; exit 0
+              echo skip > .ci_artifacts/task2.status
+              exit 0
             fi
 
-            REPO_ROOT=/ws ./src/uav_tests_cpp/tests/run_e2e.sh "$BIN" \
-              | tee .ci_artifacts/task2_gtest.log
+            set +e
+            REPO_ROOT=/ws ./src/uav_tests_cpp/tests/run_e2e.sh "$BIN" 2>&1 | tee .ci_artifacts/task2_gtest.log
             code=${PIPESTATUS[0]}
+            set -e
 
             if [ "$code" -ne 0 ]; then
               status=fail
+            elif grep -F -q "[  SKIPPED ]" .ci_artifacts/task2_gtest.log; then
+              status=skip
             else
-              if grep -F -q "[  SKIPPED ]" .ci_artifacts/task2_gtest.log; then
-                status=skip
-              else
-                status=pass
-              fi
+              status=pass
             fi
             echo "$status" > .ci_artifacts/task2.status
 
             cp /tmp/sitl_e2e.log   .ci_artifacts/task2_sitl.log   2>/dev/null || true
             cp /tmp/mavros_e2e.log .ci_artifacts/task2_mavros.log 2>/dev/null || true
-          '
+          ' || true
           echo "status=$(cat .ci_artifacts/task2.status || echo unknown)" >> "$GITHUB_OUTPUT"
+
 
       - name: 📎 Upload artifacts
         if: always()
