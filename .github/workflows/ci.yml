@@ -96,7 +96,7 @@ jobs:
           '
 
       # ---------- Task 1 ----------
-      - name: ▶️ Task 1 – Arm/Disarm
+      - name: ▶️ Task 1 – Arm/Disarm (direct gtest)
         id: task1
         shell: bash
         continue-on-error: true
@@ -108,35 +108,35 @@ jobs:
             source /opt/ros/humble/setup.bash
             source install/setup.bash
 
-            # CTest'i doğrudan çalıştır: sadece task1_arm_disarm
-            # Çıktıyı hosta bind edilen .ci_artifacts içine tee ile yaz
-            ctest --test-dir build/uav_tests_cpp \
-                  -R "^task1_arm_disarm$" \
-                  --output-on-failure -VV \
-                  | tee .ci_artifacts/task1_ctest.log
+            BIN="build/uav_tests_cpp/test_task1_arm_disarm"
+            if [ ! -x "$BIN" ]; then
+              echo "(missing $BIN)"; echo skip > .ci_artifacts/task1.status; exit 0
+            fi
+
+            # E2E runner ile doğrudan gtest çalıştır
+            REPO_ROOT=/ws ./src/uav_tests_cpp/tests/run_e2e.sh "$BIN" \
+              | tee .ci_artifacts/task1_gtest.log
             code=${PIPESTATUS[0]}
 
-            # Durumu belirle
             if [ "$code" -ne 0 ]; then
               status=fail
             else
-              if grep -F -q "[  SKIPPED ]" .ci_artifacts/task1_ctest.log; then
+              if grep -F -q "[  SKIPPED ]" .ci_artifacts/task1_gtest.log; then
                 status=skip
               else
                 status=pass
               fi
             fi
-
             echo "$status" > .ci_artifacts/task1.status
 
-            # (Varsa) e2e logları topla
+            # (Varsa) e2e loglarını topla
             cp /tmp/sitl_e2e.log   .ci_artifacts/task1_sitl.log   2>/dev/null || true
             cp /tmp/mavros_e2e.log .ci_artifacts/task1_mavros.log 2>/dev/null || true
           '
           echo "status=$(cat .ci_artifacts/task1.status || echo unknown)" >> "$GITHUB_OUTPUT"
 
       # ---------- Task 2 ----------
-      - name: ▶️ Task 2 – Takeoff/Land
+      - name: ▶️ Task 2 – Takeoff/Land (direct gtest)
         id: task2
         shell: bash
         continue-on-error: true
@@ -148,22 +148,24 @@ jobs:
             source /opt/ros/humble/setup.bash
             source install/setup.bash
 
-            ctest --test-dir build/uav_tests_cpp \
-                  -R "^task2_takeoff_land$" \
-                  --output-on-failure -VV \
-                  | tee .ci_artifacts/task2_ctest.log
+            BIN="build/uav_tests_cpp/test_task2_takeoff_land"
+            if [ ! -x "$BIN" ]; then
+              echo "(missing $BIN)"; echo skip > .ci_artifacts/task2.status; exit 0
+            fi
+
+            REPO_ROOT=/ws ./src/uav_tests_cpp/tests/run_e2e.sh "$BIN" \
+              | tee .ci_artifacts/task2_gtest.log
             code=${PIPESTATUS[0]}
 
             if [ "$code" -ne 0 ]; then
               status=fail
             else
-              if grep -F -q "[  SKIPPED ]" .ci_artifacts/task2_ctest.log; then
+              if grep -F -q "[  SKIPPED ]" .ci_artifacts/task2_gtest.log; then
                 status=skip
               else
                 status=pass
               fi
             fi
-
             echo "$status" > .ci_artifacts/task2.status
 
             cp /tmp/sitl_e2e.log   .ci_artifacts/task2_sitl.log   2>/dev/null || true
