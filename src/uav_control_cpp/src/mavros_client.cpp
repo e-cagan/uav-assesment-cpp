@@ -35,14 +35,31 @@ void MavrosClient::init() {
 }
 
 bool MavrosClient::wait_for_mavros(double timeout_s) {
-  const auto deadline = node_->get_clock()->now() + rclcpp::Duration::from_seconds(timeout_s);
-  while (rclcpp::ok() && node_->get_clock()->now() < deadline) {
+  using namespace std::chrono_literals;
+
+  const auto deadline_ros = node_->get_clock()->now() + rclcpp::Duration::from_seconds(timeout_s);
+  // Ayrıca wall-clock ile de guard alalım (sim time açık olursa ROS saati beklenmedik olabilir)
+  const auto deadline_wall = std::chrono::steady_clock::now() + std::chrono::milliseconds((int)(timeout_s * 1000));
+
+  while (rclcpp::ok()
+      && node_->get_clock()->now() < deadline_ros
+      && std::chrono::steady_clock::now() < deadline_wall) {
+
+    // Servis keşfini aktif tetikle
+    (void)arm_cli_->wait_for_service(200ms);
+    (void)mode_cli_->wait_for_service(200ms);
+
     exec_->spin_some();
+
     const bool services_ready = arm_cli_->service_is_ready() && mode_cli_->service_is_ready();
-    if (services_ready && got_state_.load()) return true;
+    const bool state_ok       = got_state_.load();
+
+    if (services_ready && state_ok) return true;
+
     rclcpp::sleep_for(100ms);
   }
   return false;
+}
 }
 
 bool MavrosClient::arm(bool value, double timeout_s) {

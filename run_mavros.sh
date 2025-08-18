@@ -2,7 +2,7 @@
 set -eo pipefail   # <— -u yok
 
 # Kullanım: ./run_mavros.sh [PORT]
-PORT="${1:-14557}"
+PORT="${1:-14580}"
 
 if [ -f "/opt/ros/humble/setup.bash" ]; then
   # ROS setup dosyası -u ile source edilemez, biz zaten -u kullanmıyoruz
