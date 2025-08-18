@@ -13,23 +13,15 @@
 class MavrosClient {
 public:
   MavrosClient();
-
-  // Setup node, subs/pubs/clients
   void init();
-
-  // Wait until /mavros services appear
   bool wait_for_mavros(double timeout_s = 20.0);
-
-  // Arm/disarm
   bool arm(bool value, double timeout_s = 5.0);
-
-  // Change mode (e.g., "OFFBOARD", "AUTO.LAND")
   bool set_mode(const std::string &mode, double timeout_s = 5.0);
 
-  // Stream position setpoints (needed before OFFBOARD)
-  void pump_setpoints(double z, int count = 100, std::chrono::milliseconds dt = std::chrono::milliseconds(20));
+  // Aynı imzayı koruyoruz ama akışı kalıcı bir timer ile sürdürüyoruz
+  void pump_setpoints(double z, int count = 100,
+                      std::chrono::milliseconds dt = std::chrono::milliseconds(50));
 
-  // Wait until local z >= alt
   bool wait_alt_ge(double alt, double timeout_s = 10.0);
 
   rclcpp::Node::SharedPtr node() const { return node_; }
@@ -46,7 +38,16 @@ private:
   rclcpp::Client<mavros_msgs::srv::CommandBool>::SharedPtr arm_cli_;
   rclcpp::Client<mavros_msgs::srv::SetMode>::SharedPtr mode_cli_;
 
+  // Kalıcı setpoint akışı
+  rclcpp::TimerBase::SharedPtr timer_;
+  std::chrono::milliseconds period_{50};
+  double target_z_{0.0};
+
+  // Durum
+  std::atomic<bool> got_state_{false};
+  std::atomic<bool> got_pose_{false};
   mavros_msgs::msg::State state_;
   geometry_msgs::msg::PoseStamped last_pose_;
-  std::atomic<bool> got_pose_{false};
+
+  void ensure_stream_(std::chrono::milliseconds dt);
 };
