@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <package format="3">
   <name>uav_control_cpp</name>
-  <version>0.0.1</version>
-  <description>C++ MAVROS controller (OFFBOARD, arm/disarm, takeoff/land)</description>
+  <version>0.1.0</version>
+  <description>C++ MAVROS client (OFFBOARD, arm/disarm, takeoff/land helpers)</description>
   <maintainer email="you@example.com">you</maintainer>
   <license>MIT</license>
 

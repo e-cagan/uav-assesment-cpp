@@ -8,7 +8,6 @@ find_package(mavros_msgs REQUIRED)
 
 add_library(${PROJECT_NAME} src/mavros_client.cpp)
 
-# include/uav_control_cpp/... dışarı PUBLIC olarak açılsın
 target_include_directories(${PROJECT_NAME}
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -19,7 +18,6 @@ ament_target_dependencies(${PROJECT_NAME}
   rclcpp geometry_msgs mavros_msgs
 )
 
-# install + export
 install(TARGETS ${PROJECT_NAME}
   EXPORT export_${PROJECT_NAME}
   ARCHIVE DESTINATION lib
